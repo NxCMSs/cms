@@ -251,7 +251,7 @@ export function addHook(
         // Avoid duplicates on hot-reload re-registration
         stamped.forEach((f) => {
             const exists = _rootPages.some(
-                (r) => r.pluginNx === f.pluginNx && r.label === f.label
+                (r) => r.pluginNx === f.pluginNx && r.key === f.key && r.type === f.type
             );
             if (!exists) _rootPages.push(f);
         });

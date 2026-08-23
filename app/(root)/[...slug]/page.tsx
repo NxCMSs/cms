@@ -24,7 +24,7 @@ import mongoose from "mongoose";
 export const dynamic = "force-dynamic";
 
 interface RootPageProps {
-    params:       Promise<{ slug: string[] }>;
+    params: Promise<{ slug: string[] }>;
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
@@ -54,8 +54,10 @@ async function getPermalinkMap(
 
         // Seed any missing defaults (idempotent)
         const toInsert = [
+            // User profile pages — driven by User.slug, default prefix "" (/{slug})
+            { contentType: "user", prefix: "" },
             // Seller profile pages — driven by User.slug, not a Post type
-            { contentType: "seller",   prefix: "seller"   },
+            { contentType: "seller", prefix: "seller" },
             // Reporter profile pages — driven by User.slug
             { contentType: "reporter", prefix: "reporter" },
             ...postTypes.map((pt) => ({
@@ -102,16 +104,16 @@ async function getPost(slug: string, type: string) {
 
         // Serialize to plain object — no ObjectId / Date / Buffer instances
         return {
-            _id:       String(post._id),
-            title:     String(post.title  ?? ""),
-            slug:      String(post.slug   ?? ""),
-            type:      String(post.type   ?? ""),
-            status:    String(post.status ?? ""),
-            category:  post.category ? String(post.category) : null,
-            userId:    String(post.userId ?? ""),
+            _id: String(post._id),
+            title: String(post.title ?? ""),
+            slug: String(post.slug ?? ""),
+            type: String(post.type ?? ""),
+            status: String(post.status ?? ""),
+            category: post.category ? String(post.category) : null,
+            userId: String(post.userId ?? ""),
             createdAt: post.createdAt instanceof Date ? post.createdAt.toISOString() : String(post.createdAt ?? ""),
             updatedAt: post.updatedAt instanceof Date ? post.updatedAt.toISOString() : String(post.updatedAt ?? ""),
-            info:      infoMap,
+            info: infoMap,
         };
     })();
 }
@@ -125,8 +127,8 @@ async function getUserBySlug(userSlug: string, userType: string) {
     return withCache(`user:${userType}:${userSlug}`, async () => {
         await connectDB();
         const user = await User.findOne({
-            slug:   userSlug,
-            type:   userType,
+            slug: userSlug,
+            type: userType,
             status: "active",
         } as any).lean() as any;
 
@@ -139,27 +141,27 @@ async function getUserBySlug(userSlug: string, userType: string) {
         // Return ALL user fields + ALL UserInfo fields in info.
         // info.userId is the key server hooks read to fetch enriched data.
         return {
-            _id:       String(user._id),
-            title:     String(user.name      ?? ""),
-            slug:      String(user.slug      ?? ""),
-            type:      userType,
-            status:    "published",
+            _id: String(user._id),
+            title: String(user.name ?? ""),
+            slug: String(user.slug ?? ""),
+            type: userType,
+            status: "published",
             createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : String(user.createdAt ?? ""),
             updatedAt: user.updatedAt instanceof Date ? user.updatedAt.toISOString() : String(user.updatedAt ?? ""),
             // Expose full user record fields directly
             user: {
-                _id:      String(user._id),
-                name:     String(user.name     ?? ""),
-                slug:     String(user.slug     ?? ""),
-                email:    String(user.email    ?? ""),
-                phone:    String(user.phone    ?? ""),
-                type:     String(user.type     ?? ""),
-                image:    String(user.image    ?? ""),
-                status:   String(user.status   ?? ""),
-                address:  String(user.address  ?? ""),
-                state:    String(user.state    ?? ""),
-                city:     String(user.city     ?? ""),
-                zipCode:  String(user.zipCode  ?? ""),
+                _id: String(user._id),
+                name: String(user.name ?? ""),
+                slug: String(user.slug ?? ""),
+                email: String(user.email ?? ""),
+                phone: String(user.phone ?? ""),
+                type: String(user.type ?? ""),
+                image: String(user.image ?? ""),
+                status: String(user.status ?? ""),
+                address: String(user.address ?? ""),
+                state: String(user.state ?? ""),
+                city: String(user.city ?? ""),
+                zipCode: String(user.zipCode ?? ""),
                 createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : String(user.createdAt ?? ""),
             },
             info: {
@@ -190,15 +192,15 @@ async function getCat(slug: string, type: string) {
 
         // Serialize to plain object — no ObjectId / Date / Buffer instances
         return {
-            _id:       String(cat._id),
-            title:     String(cat.title    ?? ""),
-            slug:      String(cat.slug     ?? ""),
-            type:      String(cat.type     ?? ""),
-            status:    String(cat.status   ?? ""),
-            parentId:  cat.parentId ? String(cat.parentId) : null,
+            _id: String(cat._id),
+            title: String(cat.title ?? ""),
+            slug: String(cat.slug ?? ""),
+            type: String(cat.type ?? ""),
+            status: String(cat.status ?? ""),
+            parentId: cat.parentId ? String(cat.parentId) : null,
             createdAt: cat.createdAt instanceof Date ? cat.createdAt.toISOString() : String(cat.createdAt ?? ""),
             updatedAt: cat.updatedAt instanceof Date ? cat.updatedAt.toISOString() : String(cat.updatedAt ?? ""),
-            info:      infoMap,
+            info: infoMap,
         };
     })();
 }
@@ -208,8 +210,8 @@ async function getCat(slug: string, type: string) {
 async function resolveTemplate(type: string, activeNxSet: Set<string>) {
     const rootPages = getRootPages();
     const candidates = rootPages.filter(
-        (p) => p.type === type && p.slug === "dynamic" &&
-            (p.pluginNx === CORE_NX || activeNxSet.has(p.pluginNx!))
+        (p) => (p.type === type || p.key === type) &&
+            (p.pluginNx === CORE_NX || activeNxSet.size === 0 || activeNxSet.has(p.pluginNx!))
     );
     if (candidates.length === 0) return null;
 
@@ -230,9 +232,13 @@ function prefixSegments(prefix: string): string[] {
     return prefix.trim().replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
 }
 
-function matchPrefix(slugParts: string[], prefix: string): string | null {
+function matchPrefix(slugParts: string[], prefix: string, allowSubPath = false): string | null {
     const segs = prefixSegments(prefix);
-    if (slugParts.length !== segs.length + 1) return null;
+    if (!allowSubPath) {
+        if (slugParts.length !== segs.length + 1) return null;
+    } else {
+        if (slugParts.length < segs.length + 1) return null;
+    }
     for (let i = 0; i < segs.length; i++) {
         if (slugParts[i] !== segs[i]) return null;
     }
@@ -254,36 +260,36 @@ export async function generateMetadata({ params }: RootPageProps): Promise<Metad
     ]);
 
     const settings = await Settings();
-    const siteName   = String(settings.siteName ?? settings.site_title ?? "");
-    const defTitle   = String(settings.site_title ?? settings.siteName ?? "");
-    const defDesc    = String(settings.seo_description ?? settings.siteDescription ?? "");
-    const defImg     = String(settings.seo_meta_image ?? "");
-    const baseUrl    = String(process.env.NEXT_PUBLIC_APP_URL ?? "");
-    const pageUrl    = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/${slug.join("/")}` : "";
+    const siteName = String(settings.siteName ?? settings.site_title ?? "");
+    const defTitle = String(settings.site_title ?? settings.siteName ?? "");
+    const defDesc = String(settings.seo_description ?? settings.siteDescription ?? "");
+    const defImg = String(settings.seo_meta_image ?? "");
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL ?? "");
+    const pageUrl = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/${slug.join("/")}` : "";
 
     const buildMeta = (info: Record<string, string>, contentTitle: string = "", publisher: string = ""): Metadata => {
         // Read from seo_data JSON (new plugin format) with fallback to individual keys
         let seoTitle = "";
-        let seoDesc  = "";
-        let seoKw    = "";
-        let seoImg   = "";
+        let seoDesc = "";
+        let seoKw = "";
+        let seoImg = "";
         if (info.seo_data) {
             try {
                 const parsed = JSON.parse(info.seo_data);
                 seoTitle = parsed.seo_title || "";
-                seoDesc  = parsed.seo_description || "";
-                seoKw    = parsed.seo_keywords || "";
-                seoImg   = parsed.seo_image || "";
+                seoDesc = parsed.seo_description || "";
+                seoKw = parsed.seo_keywords || "";
+                seoImg = parsed.seo_image || "";
             } catch { /* not JSON — ignore */ }
         }
         seoTitle = seoTitle || info.seo_title || "";
-        seoDesc  = seoDesc  || info.seo_description || "";
-        seoKw    = seoKw    || info.seo_keywords || "";
+        seoDesc = seoDesc || info.seo_description || "";
+        seoKw = seoKw || info.seo_keywords || "";
 
-        const title       = seoTitle || contentTitle || defTitle;
+        const title = seoTitle || contentTitle || defTitle;
         const description = seoDesc || defDesc;
-        const keywords    = seoKw || "";
-        const image       = seoImg || info.seo_image || defImg;
+        const keywords = seoKw || "";
+        const image = seoImg || info.seo_image || defImg;
 
         const hasSeoTitle = Boolean(seoTitle);
 
@@ -373,6 +379,28 @@ export async function generateMetadata({ params }: RootPageProps): Promise<Metad
         }
     }
 
+    // ─── User Profile metadata — dynamically resolved from User.slug via permalinkMap["user"] ─────
+    {
+        const userPrefix = permalinkMap["user"] ?? "";
+        let userSlug = matchPrefix(slug, userPrefix, true);
+        if (userSlug === null && slug.length >= 1) {
+            userSlug = slug[0];
+        }
+        if (userSlug !== null) {
+            const userDoc = await User.findOne({ slug: userSlug }).select('name slug image').lean() as any;
+            if (userDoc) {
+                return {
+                    title: userDoc.name,
+                    description: `${userDoc.name}'s profile on ${siteName || 'Community'}`,
+                    openGraph: {
+                        title: userDoc.name,
+                        images: userDoc.image ? [{ url: userDoc.image }] : undefined,
+                    },
+                };
+            }
+        }
+    }
+
     // ── Try category types ──
     for (const catType of catTypes) {
         const prefix = permalinkMap[catType.key] ?? "";
@@ -419,7 +447,7 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
             (p) =>
                 p.slug === "single" &&
                 p.key === slug[0] &&
-                activeNxSet.has(p.pluginNx!)
+                (p.pluginNx === CORE_NX || activeNxSet.size === 0 || activeNxSet.has(p.pluginNx!))
         );
         if (staticPage) {
             // Resolve component: static import or lazy dynamic import
@@ -443,7 +471,7 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
             (p) =>
                 p.slug === "prefix" &&
                 p.key === slug[0] &&
-                activeNxSet.has(p.pluginNx!)
+                (p.pluginNx === CORE_NX || activeNxSet.size === 0 || activeNxSet.has(p.pluginNx!))
         );
         if (prefixPage) {
             let Component = prefixPage.component as any;
@@ -500,7 +528,7 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
     // ─── Seller pages — resolved from User.slug, no Post document needed ─────
     {
         const sellerPrefix = permalinkMap["seller"] ?? "seller";
-        const sellerSlug   = matchPrefix(slug, sellerPrefix);
+        const sellerSlug = matchPrefix(slug, sellerPrefix);
 
         if (sellerSlug !== null) {
             const sellerData = await getUserBySlug(sellerSlug, "seller");
@@ -525,7 +553,7 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
     // ─── Reporter pages — resolved from User.slug, no Post document needed ───
     {
         const reporterPrefix = permalinkMap["reporter"] ?? "reporter";
-        const reporterSlug   = matchPrefix(slug, reporterPrefix);
+        const reporterSlug = matchPrefix(slug, reporterPrefix);
 
         if (reporterSlug !== null) {
             const reporterData = await getUserBySlug(reporterSlug, "reporter");
@@ -542,6 +570,35 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
                 if (template?.component) {
                     const ReporterComponent = template.component as any;
                     return <ReporterComponent data={reporterData} settings={settings} permalinkMap={permalinkMap} pageData={pageData} />;
+                }
+            }
+        }
+    }
+
+    // ─── User Profile pages — generic & dynamic via permalinkMap["user"] ─────
+    {
+        const userPrefix = permalinkMap["user"] ?? "";
+        let userSlug = matchPrefix(slug, userPrefix, true);
+        if (userSlug === null && slug.length >= 1) {
+            userSlug = slug[0];
+        }
+
+        if (userSlug !== null) {
+            const userDoc = await User.findOne({ slug: userSlug }).select("-password").lean() as any;
+            if (userDoc) {
+                const rawPageData = await runServerDataHook(
+                    "user",
+                    String(userDoc._id),
+                    userDoc.slug,
+                    userDoc
+                );
+
+                const template = await resolveTemplate("user", activeNxSet);
+                if (template?.component) {
+                    const UserComponent = template.component as any;
+                    const plainUserDoc = JSON.parse(JSON.stringify(userDoc));
+                    const plainPageData = rawPageData ? JSON.parse(JSON.stringify(rawPageData)) : undefined;
+                    return <UserComponent data={plainUserDoc} settings={settings} permalinkMap={permalinkMap} pageData={plainPageData} />;
                 }
             }
         }

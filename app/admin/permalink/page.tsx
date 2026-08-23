@@ -14,7 +14,7 @@ interface PermalinkRow {
     label: string;
     icon: string;
     color: string;
-    kind: "post" | "category";
+    kind: "post" | "category" | "profile";
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -73,6 +73,13 @@ function PermalinkRowItem({
 
     const preview = buildPreview(prefix);
 
+    const kindLabel =
+        row.kind === "post"
+            ? "Post type"
+            : row.kind === "category"
+            ? "Category type"
+            : "Profile type";
+
     return (
         <div className="flex flex-col gap-2 p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
             {/* Header */}
@@ -82,7 +89,7 @@ function PermalinkRowItem({
                 </div>
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-800 truncate">{row.label}</p>
-                    <p className="text-xs text-gray-400">{row.kind === "post" ? "Post type" : "Category type"}</p>
+                    <p className="text-xs text-gray-400">{kindLabel}</p>
                 </div>
                 {status === "saving" && (
                     <Icon icon="svg-spinners:ring-resize" width={16} className="text-gray-400 shrink-0" />
@@ -138,26 +145,32 @@ export default function PermalinkPage() {
             .finally(() => setDbLoaded(true));
     }, []);
 
-    // Build rows from registered post types + cat types
-    // (populated after reregisterHooks runs inside useActivePlugins)
+    // Build rows from registered post types + cat types + profile types
     const postTypes: PostTypeField[] = activePlugins !== null ? getAllPostTypes() : [];
     const catTypes: CatTypeField[] = activePlugins !== null ? getAllCatTypes() : [];
 
-    const rows: PermalinkRow[] = [
-        ...postTypes.map((pt): PermalinkRow => ({
-            contentType: pt.key,
-            label: pt.label,
-            icon: pt.icon,
-            color: pt.color,
-            kind: "post",
-        })),
-        ...catTypes.map((ct): PermalinkRow => ({
-            contentType: ct.key,
-            label: ct.label,
-            icon: ct.icon,
-            color: ct.color,
-            kind: "category",
-        })),
+    const profileRows: PermalinkRow[] = [
+        {
+            contentType: "user",
+            label: "User Profile",
+            icon: "solar:user-bold",
+            color: "from-indigo-600 to-purple-600",
+            kind: "profile",
+        },
+        {
+            contentType: "seller",
+            label: "Seller Profile",
+            icon: "solar:shop-2-bold",
+            color: "from-amber-600 to-orange-600",
+            kind: "profile",
+        },
+        {
+            contentType: "reporter",
+            label: "Reporter Profile",
+            icon: "solar:microphone-bold",
+            color: "from-emerald-600 to-teal-600",
+            kind: "profile",
+        },
     ];
 
     const handleSaved = (contentType: string, prefix: string) => {
@@ -188,70 +201,78 @@ export default function PermalinkPage() {
             <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-700 space-y-1">
                 <p className="font-semibold">How it works</p>
                 <ul className="list-disc list-inside space-y-0.5 text-indigo-600 text-xs">
-                    <li>Blank prefix → <span className="font-mono">/my-post-slug</span></li>
-                    <li>Prefix <span className="font-mono">hello</span> → <span className="font-mono">/hello/my-post-slug</span></li>
+                    <li>Blank prefix → <span className="font-mono">/my-post-slug</span> or <span className="font-mono">/username</span></li>
+                    <li>Prefix <span className="font-mono">user</span> → <span className="font-mono">/user/username</span></li>
                     <li>Prefix <span className="font-mono">news/blog</span> → <span className="font-mono">/news/blog/my-post-slug</span></li>
                     <li>No redirects — the router resolves content directly from the URL.</li>
                 </ul>
             </div>
 
-            {rows.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                    <Icon icon="solar:link-bold" width={40} className="mx-auto mb-3 opacity-30" />
-                    <p>No content types registered yet.</p>
+            {/* Profile Types */}
+            <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    Profile & User Types
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {profileRows.map((row) => (
+                        <PermalinkRowItem
+                            key={row.contentType}
+                            row={row}
+                            initialPrefix={permalinks[row.contentType] ?? (row.contentType === "user" ? "" : row.contentType)}
+                            onSaved={handleSaved}
+                        />
+                    ))}
                 </div>
-            ) : (
-                <>
-                    {/* Post types */}
-                    {postTypes.length > 0 && (
-                        <section className="space-y-3">
-                            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                Post Types
-                            </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {postTypes.map((pt) => (
-                                    <PermalinkRowItem
-                                        key={pt.key}
-                                        row={{
-                                            contentType: pt.key,
-                                            label: pt.label,
-                                            icon: pt.icon,
-                                            color: pt.color,
-                                            kind: "post",
-                                        }}
-                                        initialPrefix={permalinks[pt.key] ?? ""}
-                                        onSaved={handleSaved}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    )}
+            </section>
 
-                    {/* Category types */}
-                    {catTypes.length > 0 && (
-                        <section className="space-y-3">
-                            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                Category Types
-                            </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {catTypes.map((ct) => (
-                                    <PermalinkRowItem
-                                        key={ct.key}
-                                        row={{
-                                            contentType: ct.key,
-                                            label: ct.label,
-                                            icon: ct.icon,
-                                            color: ct.color,
-                                            kind: "category",
-                                        }}
-                                        initialPrefix={permalinks[ct.key] ?? ""}
-                                        onSaved={handleSaved}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    )}
-                </>
+            {/* Post types */}
+            {postTypes.length > 0 && (
+                <section className="space-y-3">
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        Post Types
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {postTypes.map((pt) => (
+                            <PermalinkRowItem
+                                key={pt.key}
+                                row={{
+                                    contentType: pt.key,
+                                    label: pt.label,
+                                    icon: pt.icon,
+                                    color: pt.color,
+                                    kind: "post",
+                                }}
+                                initialPrefix={permalinks[pt.key] ?? pt.key}
+                                onSaved={handleSaved}
+                            />
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* Category types */}
+            {catTypes.length > 0 && (
+                <section className="space-y-3">
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        Category Types
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {catTypes.map((ct) => (
+                            <PermalinkRowItem
+                                key={ct.key}
+                                row={{
+                                    contentType: ct.key,
+                                    label: ct.label,
+                                    icon: ct.icon,
+                                    color: ct.color,
+                                    kind: "category",
+                                }}
+                                initialPrefix={permalinks[ct.key] ?? ct.key}
+                                onSaved={handleSaved}
+                            />
+                        ))}
+                    </div>
+                </section>
             )}
         </div>
     );
