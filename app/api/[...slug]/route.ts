@@ -25,7 +25,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getApiHandler, type HttpVerb } from "@/hook/pluginApiRoutes";
+import { getApiHandler, hasAnyApiHandler, type HttpVerb } from "@/hook/pluginApiRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -45,12 +45,8 @@ async function dispatch(req: NextRequest, { params }: SlugParams): Promise<Respo
     const resolved = getApiHandler(verb, slugPath);
 
     if (!resolved) {
-        // Check whether *any* verb is registered for this path (→ 405 vs 404)
-        const anyVerb = (["GET", "POST", "PUT", "PATCH", "DELETE"] as HttpVerb[]).find(
-            (v) => getApiHandler(v, slugPath) !== null
-        );
-
-        if (anyVerb) {
+        // Check whether *any* handler is registered for this path (→ 405 vs 404)
+        if (hasAnyApiHandler(slugPath)) {
             return NextResponse.json(
                 { error: `Method ${verb} not allowed` },
                 { status: 405 }

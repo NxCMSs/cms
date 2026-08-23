@@ -130,6 +130,21 @@ apiContext.keys().forEach((contextKey: string) => {
     }
 });
 
+// Sort routes so that static segments have higher precedence over dynamic segments (:id)
+function routeSpecificityScore(route: ApiRouteEntry): number {
+    let score = 0;
+    for (const seg of route.segments) {
+        if (seg.startsWith(":")) {
+            score += 1; // Dynamic segment = lower priority
+        } else {
+            score += 100; // Static segment = high priority
+        }
+    }
+    return score;
+}
+
+_routes.sort((a, b) => routeSpecificityScore(b) - routeSpecificityScore(a));
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface ResolvedRoute {
@@ -154,6 +169,10 @@ export function getApiHandler(
     for (const route of _routes) {
         if (route.segments.length !== incomingSegments.length) continue;
 
+        // Skip routes that do not support the requested HTTP verb
+        const handler = route.handlers[verb];
+        if (!handler) continue;
+
         const params: Record<string, string> = {};
         let matched = true;
 
@@ -172,13 +191,36 @@ export function getApiHandler(
 
         if (!matched) continue;
 
-        const handler = route.handlers[verb];
-        if (!handler) return null; // route matched but verb not supported
-
         return { handler, params };
     }
 
     return null;
+}
+
+/**
+ * Checks whether any route exists for the given slug path across any HTTP verb.
+ */
+export function hasAnyApiHandler(slugPath: string): boolean {
+    const incomingSegments = slugPath.split("/").filter(Boolean);
+
+    for (const route of _routes) {
+        if (route.segments.length !== incomingSegments.length) continue;
+
+        let matched = true;
+        for (let i = 0; i < route.segments.length; i++) {
+            const routeSeg = route.segments[i];
+            const incomingSeg = incomingSegments[i];
+
+            if (!routeSeg.startsWith(":") && routeSeg !== incomingSeg) {
+                matched = false;
+                break;
+            }
+        }
+
+        if (matched) return true;
+    }
+
+    return false;
 }
 
 /**
