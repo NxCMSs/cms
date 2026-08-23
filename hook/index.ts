@@ -191,6 +191,10 @@ const _adminPages: FormHookField[] = [];
  * Filters out entries whose plugin is no longer active (expired / inactive).
  * Not affected by clearHooks — safe to call from server components.
  */
+export function getRegisteredRootPages(): FormHookField[] {
+    return [..._rootPages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+}
+
 export function getAllRootPages(): FormHookField[] {
     return [..._rootPages]
         .filter((f) => !f.pluginNx || isPluginActive(f.pluginNx))

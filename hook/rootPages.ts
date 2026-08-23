@@ -11,7 +11,7 @@
  *   import { getRootPages } from "@/hook/rootPages";
  */
 
-import { getAllRootPages, registerCoreHooks } from "@/hook";
+import { getAllRootPages, getRegisteredRootPages, registerCoreHooks } from "@/hook";
 import type { FormHookField } from "@/hook";
 import { register as coreRegister } from "@/components/admin";
 
@@ -45,8 +45,7 @@ pluginContext.keys().forEach((key: string) => {
 
 /**
  * Returns all root page entries across all plugins.
- * Filter by pluginNx against the active set before rendering.
  */
 export function getRootPages(): FormHookField[] {
-    return getAllRootPages();
+    return getRegisteredRootPages();
 }

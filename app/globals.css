@@ -114,6 +114,9 @@ body {
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+.scrollbar-none {
+    scrollbar-width: none;
+}
 .nobar::-webkit-scrollbar {
   display: none;
 }
