@@ -480,7 +480,7 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
                 Component = await resolveLazyComponent(prefixPage.lazyPath);
             }
             if (Component) {
-                return <Component settings={settings} permalinkMap={permalinkMap} />;
+                return <Component settings={settings} permalinkMap={permalinkMap} slug={slug} params={{ slug }} />;
             }
         }
     }

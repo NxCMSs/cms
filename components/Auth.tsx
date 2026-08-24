@@ -43,9 +43,11 @@ type SignupTab = "email" | "phone";
 
 interface AuthFormProps {
     mode: "login" | "signup";
+    onSuccess?: (user: any) => void;
+    redirectUrl?: string;
 }
 
-export default function AuthForm({ mode }: AuthFormProps) {
+export default function AuthForm({ mode, onSuccess, redirectUrl }: AuthFormProps) {
     const router = useRouter();
     const { refresh } = useUser();
     const isLogin = mode === "login";
@@ -137,11 +139,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
             if (isLogin) {
                 const user = await handleLogin(loginValue, password);
                 if (user) {
-                    refresh();
-                    if (user.type === "admin") {
-                        router.replace("/admin");
+                    await refresh();
+                    if (onSuccess) {
+                        onSuccess(user);
                     } else {
-                        router.replace("/");
+                        const target = redirectUrl || (user.type === "admin" ? "/admin" : "/");
+                        window.location.href = target;
                     }
                 }
             } else {
@@ -169,11 +172,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 const loginField = signupTab === "email" ? email : phone;
                 const user = await handleLogin(loginField, password);
                 if (user) {
-                    refresh();
-                    if (user.type === "admin") {
-                        router.replace("/admin");
+                    await refresh();
+                    if (onSuccess) {
+                        onSuccess(user);
                     } else {
-                        router.replace("/");
+                        const target = redirectUrl || (user.type === "admin" ? "/admin" : "/");
+                        window.location.href = target;
                     }
                 }
             }
