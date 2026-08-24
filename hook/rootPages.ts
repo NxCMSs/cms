@@ -47,5 +47,11 @@ pluginContext.keys().forEach((key: string) => {
  * Returns all root page entries across all plugins.
  */
 export function getRootPages(): FormHookField[] {
+    pluginContext.keys().forEach((key: string) => {
+        const mod = pluginContext(key);
+        if (typeof mod.register === "function") {
+            mod.register();
+        }
+    });
     return getRegisteredRootPages();
 }

@@ -252,12 +252,16 @@ export function addHook(
 
     // root.pages always goes into the permanent store (no gate, never cleared)
     if (hookName === "root.pages") {
-        // Avoid duplicates on hot-reload re-registration
+        // Update existing or add new on hot-reload re-registration
         stamped.forEach((f) => {
-            const exists = _rootPages.some(
+            const idx = _rootPages.findIndex(
                 (r) => r.pluginNx === f.pluginNx && r.key === f.key && r.type === f.type
             );
-            if (!exists) _rootPages.push(f);
+            if (idx >= 0) {
+                _rootPages[idx] = f;
+            } else {
+                _rootPages.push(f);
+            }
         });
         // Also fall through to the normal registry for client-side consumers
     }

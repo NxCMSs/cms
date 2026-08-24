@@ -445,8 +445,9 @@ export default async function DynamicRootPage({ params, searchParams: searchPara
     if (slug.length === 1) {
         const staticPage = rootPages.find(
             (p) =>
-                p.slug === "single" &&
-                p.key === slug[0] &&
+                ((p.slug === "single" && p.key === slug[0]) ||
+                 (p.type === "single" && (p.key === slug[0] || p.slug === slug[0])) ||
+                 (p.slug === slug[0] && p.type !== "builder" && p.type !== "header" && p.type !== "footer")) &&
                 (p.pluginNx === CORE_NX || activeNxSet.size === 0 || activeNxSet.has(p.pluginNx!))
         );
         if (staticPage) {
