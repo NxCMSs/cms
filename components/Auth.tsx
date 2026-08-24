@@ -41,7 +41,7 @@ function detectLoginType(value: string): LoginType {
 
 type SignupTab = "email" | "phone";
 
-interface AuthFormProps {
+export interface AuthFormProps {
     mode: "login" | "signup";
     onSuccess?: (user: any) => void;
     redirectUrl?: string;
