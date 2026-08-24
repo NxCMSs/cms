@@ -23,21 +23,12 @@ export default async function Home() {
     ]);
 
     const isLoggedIn = Boolean(user?._id);
-    const homepageType = (settings.homepage_type as string) || "both";
 
-    let target: string | undefined;
-
-    if (homepageType === "login") {
-        target = isLoggedIn
-            ? (settings.homepage_logged_in as string) || (settings.homepage as string) || (settings.homepage_guest as string)
-            : (settings.homepage_guest as string) || (settings.homepage_logged_in as string) || (settings.homepage as string);
-    } else {
-        target =
-            (settings.homepage as string) ||
-            (isLoggedIn ? (settings.homepage_logged_in as string) : (settings.homepage_guest as string)) ||
-            (settings.homepage_logged_in as string) ||
-            (settings.homepage_guest as string);
-    }
+    // If user is logged in, resolve 'homepage_logged_in' (fallback to 'homepage_guest' / 'homepage')
+    // If not logged in, resolve 'homepage_guest' (fallback to 'homepage' / 'homepage_logged_in')
+    const target = isLoggedIn
+        ? (settings.homepage_logged_in as string) || (settings.homepage_guest as string) || (settings.homepage as string)
+        : (settings.homepage_guest as string) || (settings.homepage as string) || (settings.homepage_logged_in as string);
 
     const trimmed = target?.trim();
     if (!trimmed) return null;

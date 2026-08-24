@@ -70,9 +70,22 @@ function resolveImage(info: Record<string, string>): string {
         try {
             const arr = JSON.parse(info.images);
             if (Array.isArray(arr) && arr[0]) return arr[0] as string;
-        } catch {}
+            if (typeof arr === "string" && arr) return arr;
+        } catch {
+            if (typeof info.images === "string" && info.images.startsWith("http")) return info.images;
+        }
     }
-    return info.image ?? "";
+    if (info.image) return info.image;
+    const yId = info.youtube || info.youtubeId;
+    if (yId && typeof yId === "string") {
+        const trimmed = yId.trim();
+        if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+            return `https://img.youtube.com/vi/${trimmed}/hqdefault.jpg`;
+        }
+        const match = trimmed.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i);
+        if (match && match[1]) return `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg`;
+    }
+    return "";
 }
 
 export async function fetchEnrichedBuilderData(options?: {
@@ -229,6 +242,67 @@ export async function fetchEnrichedBuilderData(options?: {
             };
         });
     });
+
+    // 6. Global posts fallback if categoryIds is empty or no posts found in categories
+    if (!categoryIds || categoryIds.length === 0 || allPosts.length === 0) {
+        try {
+            const globalDocs = await Post.find({ type: postType, status: "published" })
+                .select("_id title slug userId category createdAt")
+                .sort({ createdAt: -1 })
+                .limit(limit * 2)
+                .lean();
+
+            if (globalDocs.length > 0) {
+                const missingIds = globalDocs.map((p) => p._id).filter((id) => !postInfoMap[id.toString()]);
+                const missingUserIds = [...new Set(globalDocs.map((p) => p.userId).filter(Boolean))]
+                    .filter((uid) => !userMap[uid.toString()]);
+
+                const [extraInfos, extraUsers] = await Promise.all([
+                    missingIds.length > 0
+                        ? PostInfo.find({ postId: { $in: missingIds } }).select("postId name value").lean()
+                        : [],
+                    missingUserIds.length > 0
+                        ? User.find({ _id: { $in: missingUserIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)) } }).select("_id name image").lean()
+                        : [],
+                ]);
+
+                for (const info of extraInfos) {
+                    const key = info.postId.toString();
+                    if (!postInfoMap[key]) postInfoMap[key] = {};
+                    postInfoMap[key][info.name] = info.value;
+                }
+                for (const u of extraUsers) {
+                    userMap[u._id.toString()] = { name: u.name ?? "", image: u.image ?? "" };
+                }
+
+                const globalEnriched: EnrichedPost[] = globalDocs.map((p: any) => {
+                    const id = p._id.toString();
+                    const info = postInfoMap[id] ?? {};
+                    const author = p.userId ? userMap[p.userId] : undefined;
+                    return {
+                        _id: id,
+                        title: p.title,
+                        slug: p.slug,
+                        postUrl: buildUrl(postPrefix, p.slug),
+                        categoryTitle: null,
+                        categoryUrl: null,
+                        createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : "",
+                        image: resolveImage(info),
+                        excerpt: info.excerpt ?? info.description ?? "",
+                        authorName: author?.name,
+                        authorImage: author?.image,
+                        ratingStats: ratingMap[id] ?? { averageRating: 0, totalCount: 0 },
+                        info,
+                    };
+                });
+
+                postsByCategory[""] = globalEnriched;
+                if (tabs[0] && (!postsByCategory[tabs[0]._id] || postsByCategory[tabs[0]._id].length === 0)) {
+                    postsByCategory[tabs[0]._id] = globalEnriched;
+                }
+            }
+        } catch {}
+    }
 
     return {
         tabs,

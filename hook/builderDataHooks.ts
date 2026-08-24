@@ -1,15 +1,23 @@
 // hook/builderDataHooks.ts
 // Server-only registry. Maps builder element types to async server components.
-// Auto-discovers plugin lib/builderData.tsx files via require.context.
+// Auto-discovers plugin lib/builderData.tsx files.
 // SERVER-ONLY - never import from client components.
 
+import React from "react";
 import type { ReactNode } from "react";
+import Menus from "@/components/Menus";
 
-// A server component factory: receives the element's schema, returns JSX.
 // A server component factory: receives the element's schema and optional page data, returns JSX.
 type BuilderElementComponent = (schema: any, data?: any) => ReactNode | Promise<ReactNode>;
 
-const _registry = new Map<string, BuilderElementComponent>();
+// Safe global registry to prevent TDZ / circular import initialization errors
+function getRegistry(): Map<string, BuilderElementComponent> {
+    const g = globalThis as any;
+    if (!g.__builder_registry) {
+        g.__builder_registry = new Map<string, BuilderElementComponent>();
+    }
+    return g.__builder_registry;
+}
 
 type BuilderWrapperFn = (builderComponent: ReactNode, data?: any, pageData?: any, settings?: any, permalinkMap?: any) => ReactNode;
 
@@ -39,18 +47,20 @@ export function registerBuilderElement(
     component: BuilderElementComponent,
     pluginNx?: string
 ): void {
+    const reg = getRegistry();
     if (pluginNx) {
-        _registry.set(`${pluginNx}::${elementType}`, component);
+        reg.set(`${pluginNx}::${elementType}`, component);
     }
-    _registry.set(elementType, component);
+    reg.set(elementType, component);
 }
 
 /**
  * Returns true when a server component is registered for this element type.
  */
 export function hasBuilderElement(elementType: string, pluginNx?: string): boolean {
-    if (pluginNx && _registry.has(`${pluginNx}::${elementType}`)) return true;
-    return _registry.has(elementType);
+    const reg = getRegistry();
+    if (pluginNx && reg.has(`${pluginNx}::${elementType}`)) return true;
+    return reg.has(elementType);
 }
 
 /**
@@ -63,13 +73,11 @@ export async function renderBuilderElement(
     data?: any,
     pluginNx?: string
 ): Promise<ReactNode> {
-    const component = (pluginNx && _registry.get(`${pluginNx}::${elementType}`)) || _registry.get(elementType);
+    const reg = getRegistry();
+    const component = (pluginNx && reg.get(`${pluginNx}::${elementType}`)) || reg.get(elementType);
     if (!component) return null;
     return component(schema, data);
 }
-
-import React from "react";
-import Menus from "@/components/Menus";
 
 registerBuilderElement("menus", async (schema: any) => {
     const location = schema.content?.location || "header-1";
@@ -77,9 +85,7 @@ registerBuilderElement("menus", async (schema: any) => {
     return React.createElement(Menus, { location, menuType, settings: schema.style || {} });
 });
 
-// Auto-discovery: scans plugin/*/lib/builderData.ts files.
-// Each discovered file calls registerBuilderElement() as a side-effect.
-
+// Auto-discovery fallback: scans any additional plugin/*/lib/builderData.ts files.
 interface RequireContext {
     keys(): string[];
     (id: string): any;
@@ -89,12 +95,20 @@ declare var require: {
     (id: string): any;
 };
 
-const ctx = require.context(
-    "../plugin",
-    true,
-    /^\.\/[^/]+\/lib\/builderData\.(ts|tsx|js|jsx)$/
-);
+try {
+    const ctx = require.context(
+        "../plugin",
+        true,
+        /^\.\/[^/]+\/lib\/builderData\.(ts|tsx|js|jsx)$/
+    );
 
-ctx.keys().forEach((key: string) => {
-    ctx(key);
-});
+    ctx.keys().forEach((key: string) => {
+        try {
+            ctx(key);
+        } catch {
+            // Guard against stale HMR
+        }
+    });
+} catch {
+    // Guard in environments where require.context is not available
+}
