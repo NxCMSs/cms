@@ -43,10 +43,10 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.5",
     "@types/webpack-env": "^1.18.8",
     "@types/xml2js": "^0.4.14",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.1",
     "eslint-config-next": "^16.3.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
