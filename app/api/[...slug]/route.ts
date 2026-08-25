@@ -5,47 +5,134 @@
  * app/api/ falls through here. This handler:
  *
  *  1. Joins the slug segments into a path string
- *     e.g. ["epaper"]        -> "epaper"
- *          ["epaper","abc"]  -> "epaper/abc"
+ *     e.g. ["product", "import"] -> "product/import"
+ *          ["epaper", "abc"]     -> "epaper/abc"
  *
  *  2. Looks up the matching plugin route handler via getApiHandler()
- *     from hook/pluginApiRoutes.ts (which was auto-populated at module
- *     load time via require.context over plugin/[name]/api/[...]/route.ts).
+ *     from hook/pluginApiRoutes.ts (populated via require.context).
  *
- *  3. Forwards the request — including any extracted dynamic params —
+ *  3. If not found in the initial bundle cache (e.g. new plugin route files),
+ *     falls back to a recursive filesystem search inside plugin/<pluginName>/api/...
+ *     and imports the handler dynamically.
+ *
+ *  4. Forwards the request — including extracted dynamic params —
  *     to the matched handler, or returns 404 / 405 when no match exists.
- *
- * Plugin authors write normal Next.js route handlers inside their plugin:
- *
- *   plugin/epaper/api/epaper/route.ts          -> GET /api/epaper
- *   plugin/epaper/api/epaper/[id]/route.ts     -> GET /api/epaper/:id
- *
- * No changes are required here or in pluginApiRoutes.ts when a new plugin
- * adds api/ files — discovery is fully automatic.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getApiHandler, hasAnyApiHandler, type HttpVerb } from "@/hook/pluginApiRoutes";
+import path from "path";
+import fs from "fs";
 
 export const dynamic = "force-dynamic";
+
+const HTTP_VERBS: HttpVerb[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 interface SlugParams {
     params: Promise<{ slug: string[] }>;
 }
 
-// ─── Shared dispatcher ────────────────────────────────────────────────────────
+// ─── Filesystem Fallback Discovery ────────────────────────────────────────────
+
+function searchRouteInDir(
+    currentDir: string,
+    segments: string[],
+    index: number,
+    params: Record<string, string>
+): { filePath: string; params: Record<string, string> } | null {
+    if (index === segments.length) {
+        const tsFile = path.join(currentDir, "route.ts");
+        const jsFile = path.join(currentDir, "route.js");
+        if (fs.existsSync(tsFile)) return { filePath: tsFile, params };
+        if (fs.existsSync(jsFile)) return { filePath: jsFile, params };
+        return null;
+    }
+
+    const currentSeg = segments[index];
+    if (!fs.existsSync(currentDir)) return null;
+
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+
+    // 1. Try exact static directory match
+    const staticEntry = entries.find((e) => e.isDirectory() && e.name === currentSeg);
+    if (staticEntry) {
+        const res = searchRouteInDir(path.join(currentDir, staticEntry.name), segments, index + 1, params);
+        if (res) return res;
+    }
+
+    // 2. Try dynamic directory [param] match
+    const dynamicEntries = entries.filter((e) => e.isDirectory() && e.name.startsWith("[") && e.name.endsWith("]"));
+    for (const dyn of dynamicEntries) {
+        const paramName = dyn.name.slice(1, -1);
+        const newParams = { ...params, [paramName]: currentSeg };
+        const res = searchRouteInDir(path.join(currentDir, dyn.name), segments, index + 1, newParams);
+        if (res) return res;
+    }
+
+    return null;
+}
+
+function findPluginRouteFile(incomingSegments: string[]): { filePath: string; params: Record<string, string> } | null {
+    const pluginDir = path.join(process.cwd(), "plugin");
+    if (!fs.existsSync(pluginDir)) return null;
+
+    const plugins = fs.readdirSync(pluginDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+
+    for (const plugin of plugins) {
+        const apiDir = path.join(pluginDir, plugin, "api");
+        if (!fs.existsSync(apiDir)) continue;
+
+        // 1. Try direct exact match inside plugin/[name]/api/[...incomingSegments]/route.ts
+        const directTs = path.join(apiDir, ...incomingSegments, "route.ts");
+        const directJs = path.join(apiDir, ...incomingSegments, "route.js");
+        if (fs.existsSync(directTs)) return { filePath: directTs, params: {} };
+        if (fs.existsSync(directJs)) return { filePath: directJs, params: {} };
+
+        // 2. Recursive match (supports dynamic params [id], etc.)
+        const match = searchRouteInDir(apiDir, incomingSegments, 0, {});
+        if (match) return match;
+    }
+
+    return null;
+}
+
+// ─── Shared Dispatcher ────────────────────────────────────────────────────────
 
 async function dispatch(req: NextRequest, { params }: SlugParams): Promise<Response> {
     const { slug } = await params;
-
-    // Join segments: ["epaper", "abc123"] → "epaper/abc123"
-    const slugPath = Array.isArray(slug) ? slug.join("/") : slug;
-
+    const incomingSegments = Array.isArray(slug) ? slug : [slug];
+    const slugPath = incomingSegments.join("/");
     const verb = req.method.toUpperCase() as HttpVerb;
-    const resolved = getApiHandler(verb, slugPath);
+
+    // 1. Look up in require.context in-memory registry
+    let resolved = getApiHandler(verb, slugPath);
+
+    // 2. Fallback: Dynamic filesystem lookup (ensures immediate discovery of all plugin routes)
+    if (!resolved) {
+        const fsMatch = findPluginRouteFile(incomingSegments);
+        if (fsMatch) {
+            try {
+                const mod = await import(`@/plugin/${path.relative(path.join(process.cwd(), "plugin"), fsMatch.filePath).replace(/\\/g, "/").replace(/\.(ts|js)$/, "")}`);
+                if (typeof mod[verb] === "function") {
+                    resolved = {
+                        handler: mod[verb],
+                        params: fsMatch.params,
+                    };
+                } else if (HTTP_VERBS.some((v) => typeof mod[v] === "function")) {
+                    return NextResponse.json(
+                        { error: `Method ${verb} not allowed` },
+                        { status: 405 }
+                    );
+                }
+            } catch (importErr: any) {
+                console.error(`Failed to import plugin route ${fsMatch.filePath}:`, importErr);
+            }
+        }
+    }
 
     if (!resolved) {
-        // Check whether *any* handler is registered for this path (→ 405 vs 404)
         if (hasAnyApiHandler(slugPath)) {
             return NextResponse.json(
                 { error: `Method ${verb} not allowed` },
@@ -59,16 +146,13 @@ async function dispatch(req: NextRequest, { params }: SlugParams): Promise<Respo
         );
     }
 
-    // Build a params promise that resolves to the extracted dynamic values
-    // (e.g. { id: "abc123" }) so plugin handlers can use the same
-    // Next.js `context.params` API they would use in a static route file.
     const resolvedParams = resolved.params;
     const ctxParams = Promise.resolve(resolvedParams);
 
     return resolved.handler(req, { params: ctxParams });
 }
 
-// ─── HTTP verb exports ────────────────────────────────────────────────────────
+// ─── HTTP Verb Exports ────────────────────────────────────────────────────────
 
 export function GET(req: NextRequest, ctx: SlugParams) {
     return dispatch(req, ctx);
