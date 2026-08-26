@@ -19,7 +19,7 @@ export default function Section({ label, defaultOpen = false, children }: Props)
                 onClick={() => setOpen(!open)}
                 className="flex items-center justify-between w-full"
             >
-                <span className="text-sm font-medium text-gray-600">{label}</span>
+                <span className="text-sm font-medium text-left text-gray-600">{label}</span>
                 <Icon
                     icon="mdi:chevron-down"
                     width="15"
